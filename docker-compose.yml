@@ -1,0 +1,199 @@
+services:
+  frontend-service:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CONTRACT_ADDRESS: ${CONTRACT_ADDRESS}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    container_name: mindbet-frontend
+    ports:
+      - "80:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+      - NEXT_PUBLIC_CHAIN_ID=${CHAIN_ID:-10143}
+    depends_on:
+      - backend-api-service
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+
+  backend-api-service:
+    build:
+      context: ./backend-api-service
+      dockerfile: Dockerfile
+    container_name: mindbet-api
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=mindbet
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - BLOCKCHAIN_RPC_URL=${BLOCKCHAIN_RPC_URL}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+      - CHAIN_ID=${CHAIN_ID:-10143}
+      - IPFS_API_URL=http://ipfs:5001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  indexer-service:
+    build:
+      context: ./indexer-service
+      dockerfile: Dockerfile
+    container_name: mindbet-indexer
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=mindbet
+      - BLOCKCHAIN_RPC_URL=${BLOCKCHAIN_RPC_URL}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: mindbet-ipfs
+    ports:
+      - "5001:5001"
+      - "8081:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: mindbet-ai
+    ports:
+      - "8003:8003"
+    environment:
+      - AI_API_URL=${AI_API_URL}
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_MODEL=${AI_MODEL:-hunyuan-lite}
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=mindbet
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  telegram-bot-service:
+    build:
+      context: ./telegram-bot-service
+      dockerfile: Dockerfile
+    container_name: mindbet-telegram
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_PROXY=${TELEGRAM_PROXY}
+      - BACKEND_API_URL=${BACKEND_API_URL}
+      - AI_SERVICE_URL=${AI_SERVICE_URL}
+      - MINI_APP_URL=${MINI_APP_URL}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - backend-api-service
+      - ai-service
+    network_mode: host
+    restart: unless-stopped
+
+  debox-bot-service:
+    build:
+      context: ./debox-bot-service
+      dockerfile: Dockerfile
+    container_name: mindbet-debox
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - DEBOX_API_KEY=${DEBOX_API_KEY}
+      - DEBOX_APP_SECRET=${DEBOX_APP_SECRET}
+      - BACKEND_API_URL=http://backend-api-service:8080
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - backend-api-service
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: mindbet-mysql
+    ports:
+      - "13306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=mindbet
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mindbet-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mindbet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  mindbet-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  ipfs_data:
