@@ -6,13 +6,13 @@ log-level: info
 
 proxies:
   - name: "JP1"
-    server: 203.10.98.187
+    server: ${PROXY_SERVER}
     port: 443
     udp: true
     skip-cert-verify: true
     sni: www.bing.com
     type: hysteria2
-    password: 9c42ecbb-ea39-4814-b461-f837709ac77d
+    password: ${PROXY_PASSWORD}
 
 proxy-groups:
   - name: "Proxy"
